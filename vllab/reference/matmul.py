@@ -17,21 +17,31 @@ from __future__ import annotations
 
 import torch
 
+from vllab.numerics import to_cpu_fp64
+
 
 def reference_matmul(a: torch.Tensor, b: torch.Tensor) -> torch.Tensor:
-    """Compute ``a @ b`` in fp64 and return the fp64 result.
+    """Compute ``a @ b`` in fp64 on the CPU and return the fp64 result.
 
     Args:
         a: Tensor of shape ``(..., M, K)``.
         b: Tensor of shape ``(..., K, N)`` broadcastable against ``a``.
 
     Returns:
-        The product in ``torch.float64``. Callers cast to the precision they are
-        validating and compare with a tolerance derived from that precision.
+        The product in ``torch.float64`` on the CPU. Callers cast to the precision
+        they are validating and compare with a tolerance derived from that precision.
+
+    The reduction is always evaluated on the CPU, regardless of where the inputs
+    live. This keeps the oracle a single, device-independent source of truth — a GPU
+    reduction is order-nondeterministic, and Apple's MPS backend has no fp64 at all —
+    and it lets ``a`` and ``b`` originate on different devices. The normalisation
+    (CPU move *before* the fp64 cast, since that cast is what MPS rejects) is shared
+    with the comparison path via :func:`vllab.numerics.to_cpu_fp64`, so the lab's
+    "truth form" is defined in exactly one place.
     """
     if a.shape[-1] != b.shape[-2]:
         raise ValueError(f"inner dimensions do not match: {tuple(a.shape)} @ {tuple(b.shape)}")
-    return torch.matmul(a.to(torch.float64), b.to(torch.float64))
+    return torch.matmul(to_cpu_fp64(a), to_cpu_fp64(b))
 
 
 def tiled_matmul(

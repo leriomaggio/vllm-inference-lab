@@ -21,6 +21,30 @@ _SUPPORTED_DTYPES = frozenset(
 )
 
 
+def to_cpu_fp64(t: torch.Tensor) -> torch.Tensor:
+    """Move ``t`` to the CPU and cast it to fp64 — the lab's canonical "truth" form.
+
+    Every oracle value and every candidate/oracle comparison is materialised here so
+    that the reference numbers live in one device-independent, fully-precise place.
+    This is a *deliberate* normalisation, not incidental plumbing:
+
+    * fp64 is the oracle's contract, but Apple's MPS backend has no fp64 at all
+      (casting an MPS tensor to fp64 raises ``TypeError``), and a GPU reduction is
+      order-nondeterministic — neither is a trustworthy source of truth;
+    * the CPU move happens *before* the fp64 cast, because that cast is the step MPS
+      rejects; ``t.cpu()`` first sidesteps it.
+
+    The trade-off is explicit: a candidate produced on an accelerator is pulled back
+    to the CPU for comparison. That host hop is accepted in exchange for a single,
+    reproducible reference — correctness over avoiding a copy.
+
+    Future extension: if a caller ever needs the comparison to stay on-device (e.g. a
+    CUDA-only fast path where fp64 *is* available), add an opt-in ``device`` argument
+    here rather than re-deriving the cast at each call site.
+    """
+    return t.cpu().to(torch.float64)
+
+
 def unit_roundoff(dtype: torch.dtype) -> float:
     """Return the unit roundoff ``u`` for ``dtype``."""
     if dtype not in _SUPPORTED_DTYPES:
@@ -121,8 +145,8 @@ def compare(candidate: torch.Tensor, oracle: torch.Tensor, *, atol: float) -> Di
     under-tolerate a legitimately hard reduction). ``max_rel`` is reported for
     diagnostics only and does not gate the verdict.
     """
-    c = candidate.to(torch.float64)
-    o = oracle.to(torch.float64)
+    c = to_cpu_fp64(candidate)
+    o = to_cpu_fp64(oracle)
     if c.shape != o.shape:
         raise ValueError(f"shape mismatch: {tuple(c.shape)} vs {tuple(o.shape)}")
     diff = (c - o).abs()
