@@ -1,0 +1,48 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "vllm-inference-lab"
+version = "0.1.0"
+description = "A matmul-to-vLLM correctness and numerics lab: hand-written kernels, PagedAttention, and a real inference engine validated with an oracle-and-tolerance discipline."
+readme = "README.md"
+requires-python = ">=3.12"
+license = { text = "MIT" }
+authors = [{ name = "Valerio Maggio" }]
+keywords = ["vllm", "triton", "pagedattention", "inference", "numerical-validation"]
+
+dependencies = [
+    "torch>=2.4",
+    "numpy>=1.26,<3",
+    "scipy>=1.11,<2",
+    "typer>=0.12,<1",
+    "rich>=13",
+    "matplotlib>=3.8,<4",
+]
+
+[project.optional-dependencies]
+# Triton is used only in interpreter mode (TRITON_INTERPRET=1) for the L1 kernels.
+kernels = ["triton>=3.0"]
+# HuggingFace reference oracle for the L3/L4 differential harness.
+hf = ["transformers>=4.44", "accelerate>=0.33", "safetensors>=0.4"]
+# vLLM is a from-source CPU build on macOS; see docs/setup for the pinned tag.
+engine = ["vllm"]
+dev = ["pytest>=8,<9", "ruff>=0.6,<1", "hypothesis>=6.100"]
+
+[project.scripts]
+vllab = "vllab.cli:app"
+
+[tool.setuptools.packages.find]
+include = ["vllab*"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM", "C4"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra"

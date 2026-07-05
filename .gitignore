@@ -1,0 +1,33 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+dist/
+.venv/
+venv/
+
+# Tooling caches
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.hypothesis/
+
+# Run outputs
+artifacts/
+*.json.tmp
+reports/*.md
+!reports/.gitkeep
+
+# Plots
+*.png
+!docs/**/*.png
+
+# OS
+.DS_Store
+
+# Model / HF caches (never commit weights)
+*.safetensors
+*.bin
+hf_cache/
