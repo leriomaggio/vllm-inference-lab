@@ -6,7 +6,9 @@ __pycache__/
 build/
 dist/
 .venv/
+.venv-engine/
 venv/
+uv.lock
 
 # Tooling caches
 .pytest_cache/

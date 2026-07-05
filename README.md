@@ -53,6 +53,46 @@ vllab matrix         # L4: multi-backend correctness/latency matrix -> artifact
 vllab report         # render a markdown report from an artifact
 ```
 
+## Code organisation
+
+The package is `vllab`, one sub-package per layer. Every module has a single
+responsibility; the fast/hardware-shaped code always has a slow, obvious oracle to
+be measured against.
+
+```
+vllab/
+├── numerics.py              cross-cutting: tolerances and diff reporting
+├── reference/   (L0)        the trusted oracles
+│   ├── matmul.py            fp64 matmul oracle + tiled-reduction model (tile size, accumulator dtype)
+│   ├── attention.py         fp64 softmax-attention oracle + flash-style online-softmax schedule
+│   └── kvcache.py           non-paged incremental KV-cache decode (the paging correctness target)
+├── kernels/     (L1)        the matmul spine as a real kernel
+│   ├── matmul_triton.py     tiled Triton tl.dot kernel; lazy-imported, interpreter mode, skips w/o Triton
+│   └── harness.py           validate PyTorch model + Triton kernel vs oracle; quantify schedule divergence
+├── paged/       (L2)        PagedAttention from scratch
+│   ├── block_table.py       logical→physical page mapping over a free pool (+ fault injection)
+│   └── paged_attention.py   paged KV pool, gather/attend, paged_decode, silent-corruption demo
+├── engine/      (L3)        the real inference engine + its reference
+│   ├── types.py             GenResult: one prompt's generation (ids, text, per-step logprobs)
+│   ├── hf_reference.py      HuggingFace transformers oracle (greedy + next-token logprobs)
+│   ├── vllm_runner.py       vLLM offline wrapper, same surface as the HF reference; lazy-imported
+│   └── differential.py      compare two engines' generations (prefix match, logprob gap)
+└── cli.py                   Typer entry point (vllab): one subcommand per layer
+```
+
+| Module | Scope / reason to be |
+|--------|----------------------|
+| `numerics.py` | One home for the tolerance discipline: `reduction_atol` (the `sqrt(K)·u` model) and `compare`/`DiffReport`. Every layer derives tolerances here instead of hardcoding magic numbers. |
+| `reference/*` | The oracles. Slow, fp64, obviously correct — the definition of "right" that all faster schedules are checked against. |
+| `kernels/*` | The GEMM as a hardware kernel, plus the harness that proves same-math-different-schedule diverges only in the low bits. The lesson runs on CPU even where Triton has no wheels. |
+| `paged/*` | The KV-cache data structure that makes LLM serving efficient, and the demonstration that a mis-mapped page corrupts output *silently* — the class of bug a latency benchmark cannot see. |
+| `engine/*` | Where the real engine (vLLM) meets a trusted reference (HuggingFace). Both wrappers share one surface so their outputs are directly comparable; `differential.py` is pure and testable without either installed. |
+| `cli.py` | A thin, dependency-light command layer; heavy imports are deferred into each command so `vllab --help` and the light layers work without vLLM/Triton. |
+
+**Design rule throughout:** heavy/optional dependencies (Triton, vLLM,
+transformers) are imported lazily and guarded, so any module imports and its tests
+run — skipping cleanly — regardless of what is installed on a given machine.
+
 ## Documentation
 
 Each layer ships a companion note explaining the concept, how to validate it, and
