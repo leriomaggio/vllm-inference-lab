@@ -37,16 +37,57 @@ def reduction_atol(
 ) -> float:
     """An absolute tolerance for a length-``K`` reduction in ``dtype``.
 
-    The forward error of a floating-point sum of ``K`` terms grows like
-    ``~sqrt(K) * u`` for a well-conditioned reduction (and up to ``K * u`` in the
-    worst case). We use the ``sqrt(K)`` model times a safety factor and a problem
-    ``scale`` (typical magnitude of the accumulated result).
+    Parameters
+    ----------
+    dtype : torch.dtype
+        Working precision of the *candidate* (not the oracle). The oracle runs in
+        fp64, whose unit roundoff is negligible against the candidate's.
+    reduction_length : int
+        ``K``, the number of terms accumulated to produce a single output entry
+        (the axis that addition collapses). See Notes for what ``K`` is per
+        operator.
+    scale : float, optional
+        Representative magnitude of the result entries. Sets the regime the
+        absolute error is measured against; the tolerance scales linearly with it.
+    safety : float, optional
+        Multiplier absorbing hidden constants and non-worst-case slack.
 
-    Args:
-        dtype: Working precision of the *candidate* (not the oracle).
-        reduction_length: ``K``, the number of accumulated terms.
-        scale: Representative magnitude of the result entries.
-        safety: Multiplier absorbing constants and non-worst-case slack.
+    Returns
+    -------
+    float
+        The absolute tolerance ``safety * scale * sqrt(K) * u``, where ``u`` is the
+        unit roundoff of ``dtype``.
+
+    Notes
+    -----
+    The forward error of a floating-point sum of ``K`` terms grows like
+    ``~sqrt(K) * u`` for a well-conditioned reduction (a random-walk model), and up
+    to ``K * u`` in the adversarial worst case. We use the ``sqrt(K)`` model times a
+    ``safety`` factor and a problem ``scale`` (typical magnitude of the accumulated
+    result).
+
+    ``K`` is whichever axis is summed away -- it differs by operator:
+
+    - **matmul** ``C = A @ B`` with ``A`` of shape ``(M, K)`` and ``B`` of shape
+      ``(K, N)``: each ``C[i, j] = sum_k A[i, k] * B[k, j]`` is a sum of ``K``
+      products, so ``reduction_length`` is the shared inner dimension. For
+      ``A: (128, 512)``, ``B: (512, 64)`` in fp32 with ``scale=1.0``::
+
+          atol = 8 * 1.0 * sqrt(512) * 2**-23  ~= 2.16e-5
+
+      Growing ``K`` to 4096 loosens the tolerance by ``sqrt(4096/512) ~= 2.8x``,
+      because the longer sum genuinely accumulates more rounding.
+    - **attention** for one query over ``S`` key/value positions: each output row
+      ``out[i] = sum_s w[i, s] * V[s]`` is a sum over ``S`` terms, so
+      ``reduction_length`` is the sequence / KV-cache length. Longer contexts earn
+      proportionally more slack.
+
+    ``scale`` is a *separate* knob from ``K``: ``K`` counts additions (drives
+    ``sqrt(K)``) while ``scale`` sets the result magnitude. Keeping them apart is
+    why the verdict in :func:`compare` is a single absolute check rather than a
+    per-element ``rtol`` -- under cancellation a result entry can be tiny while its
+    summands are large, and a ``rtol * |oracle|`` gate would under-tolerate a
+    legitimately hard reduction.
     """
     return safety * scale * math.sqrt(max(reduction_length, 1)) * unit_roundoff(dtype)
 
