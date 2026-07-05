@@ -51,10 +51,12 @@ class PagedKVCache:
 
     @property
     def length(self) -> int:
+        """Number of tokens currently cached."""
         return self._length
 
     @property
     def block_table(self) -> BlockTable:
+        """The underlying logical->physical block mapping (for inspection/faults)."""
         return self._table
 
     def append(self, k_t: torch.Tensor, v_t: torch.Tensor) -> None:
