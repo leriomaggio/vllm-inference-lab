@@ -1,12 +1,13 @@
 """Tiled Triton matmul kernel — the "matmul spine" as a real hardware kernel.
 
-Triton ships no macOS/Apple-Silicon wheels, so on this machine the module imports
-without Triton and :func:`triton_available` returns ``False``; the kernel then
-skips cleanly and the L1 *numerical* lesson is carried by the pure-PyTorch
+Triton ships wheels only for Linux (and CUDA hosts); platforms without them —
+macOS/Apple-Silicon among them — cannot import it. The module tolerates this: when
+the import fails, :func:`triton_available` returns ``False``, the kernel skips
+cleanly, and the L1 *numerical* lesson is carried instead by the pure-PyTorch
 :func:`vllab.reference.matmul.tiled_matmul` model, which reproduces the same
-tile-wise reduction on any CPU. Where Triton *is* importable (Linux, or a CUDA
-host), the same kernel runs — in **interpreter mode** here (``TRITON_INTERPRET=1``,
-set below before the import) so it executes on CPU with no GPU required.
+tile-wise reduction on any CPU. Where Triton *is* importable, the same kernel runs
+in **interpreter mode** (``TRITON_INTERPRET=1``, set below before the import) so it
+executes on CPU with no GPU required.
 
 The kernel is the known-good tiled ``tl.dot`` matmul: a 2-D grid of programs, one
 per ``BM x BN`` output tile, each walking K in steps of ``BK`` and accumulating
