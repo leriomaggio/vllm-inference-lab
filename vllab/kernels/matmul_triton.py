@@ -98,7 +98,9 @@ def triton_matmul(
         ``(M, K)`` fp32 tensor (strides are passed through, so transposed or
         sliced inputs work unchanged).
     b : torch.Tensor
-        ``(K, N)`` fp32 tensor.
+        ``(K, N)`` fp32 tensor. Must be on the same device as ``a`` — unlike the
+        device-independent reference oracle, this is a hardware kernel and all
+        operands are co-located.
     block_m, block_n, block_k : int, optional
         Output-tile and K-step sizes. Changing them changes the summation
         order — outputs then differ in the low bits.
@@ -106,7 +108,13 @@ def triton_matmul(
     Returns
     -------
     torch.Tensor
-        ``(M, N)`` fp32 result.
+        ``(M, N)`` fp32 result, allocated on the inputs' device.
+
+    Raises
+    ------
+    ValueError
+        If the inputs are not 2-D, their inner dimensions disagree, or they live
+        on different devices.
     """
     if not _HAS_TRITON:
         raise RuntimeError("Triton is not available in this environment")
@@ -116,10 +124,12 @@ def triton_matmul(
     k2, n = b.shape
     if k != k2:
         raise ValueError(f"inner dimensions do not match: {(m, k)} @ {(k2, n)}")
+    if a.device != b.device:
+        raise ValueError(f"inputs must be on the same device: {a.device} vs {b.device}")
 
     a = a.to(torch.float32).contiguous()
     b = b.to(torch.float32).contiguous()
-    c = torch.empty((m, n), dtype=torch.float32)
+    c = torch.empty((m, n), dtype=torch.float32, device=a.device)
     grid = (triton.cdiv(m, block_m), triton.cdiv(n, block_n))
     _matmul_kernel[grid](
         a,
