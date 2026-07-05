@@ -13,21 +13,19 @@ from dataclasses import dataclass
 
 import torch
 
-# Unit roundoff (machine epsilon / 2 in the usual convention; we use eps directly
-# as a conservative per-rounding bound) for the precisions this lab exercises.
-_EPS: dict[torch.dtype, float] = {
-    torch.float64: 2.0**-52,
-    torch.float32: 2.0**-23,
-    torch.float16: 2.0**-10,
-    torch.bfloat16: 2.0**-7,
-}
+# The precisions this lab exercises. We take the unit roundoff from
+# ``torch.finfo(dtype).eps`` (machine epsilon = 2**-mantissa_bits), used directly
+# as a conservative per-rounding bound rather than the eps/2 convention.
+_SUPPORTED_DTYPES = frozenset(
+    {torch.float64, torch.float32, torch.float16, torch.bfloat16}
+)
 
 
 def unit_roundoff(dtype: torch.dtype) -> float:
     """Return the unit roundoff ``u`` for ``dtype``."""
-    if dtype not in _EPS:
+    if dtype not in _SUPPORTED_DTYPES:
         raise KeyError(f"no unit roundoff registered for {dtype}")
-    return _EPS[dtype]
+    return torch.finfo(dtype).eps
 
 
 def reduction_atol(
@@ -72,7 +70,16 @@ class DiffReport:
 
 
 def compare(candidate: torch.Tensor, oracle: torch.Tensor, *, atol: float) -> DiffReport:
-    """Compare ``candidate`` against ``oracle`` in fp64 and summarise the gap."""
+    """Compare ``candidate`` against ``oracle`` in fp64 and summarise the gap.
+
+    The verdict is a single absolute check (``max_abs <= atol``): there is no
+    ``rtol``. The relative dimension lives in :func:`reduction_atol`'s ``scale``
+    argument, which sets the magnitude regime the tolerance is measured against —
+    the right quantity for a reduction, where cancellation can make a result entry
+    tiny while its summands are large (a per-element ``rtol * |oracle|`` would then
+    under-tolerate a legitimately hard reduction). ``max_rel`` is reported for
+    diagnostics only and does not gate the verdict.
+    """
     c = candidate.to(torch.float64)
     o = oracle.to(torch.float64)
     if c.shape != o.shape:
