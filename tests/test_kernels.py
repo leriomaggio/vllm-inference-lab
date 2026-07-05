@@ -19,9 +19,9 @@ def test_matmul_harness_all_within_tolerance() -> None:
     check = run_matmul_check(m=128, k=256, n=96, seed=0)
     assert check.rows, "harness produced no rows"
     for row in check.rows:
-        assert row.within, (
-            f"{row.backend} {row.config}: max_abs={row.max_abs:.3e} > atol={row.atol:.3e}"
-        )
+        assert (
+            row.within
+        ), f"{row.backend} {row.config}: max_abs={row.max_abs:.3e} > atol={row.atol:.3e}"
 
 
 def test_schedule_divergence_is_nonzero_but_small() -> None:

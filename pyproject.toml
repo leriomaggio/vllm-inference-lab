@@ -28,13 +28,17 @@ kernels = ["triton>=3.0"]
 hf = ["transformers>=4.44", "accelerate>=0.33", "safetensors>=0.4"]
 # vLLM is a from-source CPU build on macOS; see docs/setup for the pinned tag.
 engine = ["vllm"]
-dev = ["pytest>=8,<9", "ruff>=0.6,<1", "hypothesis>=6.100"]
+dev = ["pytest>=8,<9", "ruff>=0.6,<1", "hypothesis>=6.100", "black>=24,<26"]
 
 [project.scripts]
 vllab = "vllab.cli:app"
 
 [tool.setuptools.packages.find]
 include = ["vllab*"]
+
+[tool.black]
+line-length = 100
+target-version = ["py312"]
 
 [tool.ruff]
 line-length = 100

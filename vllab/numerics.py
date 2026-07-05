@@ -16,9 +16,7 @@ import torch
 # The precisions this lab exercises. We take the unit roundoff from
 # ``torch.finfo(dtype).eps`` (machine epsilon = 2**-mantissa_bits), used directly
 # as a conservative per-rounding bound rather than the eps/2 convention.
-_SUPPORTED_DTYPES = frozenset(
-    {torch.float64, torch.float32, torch.float16, torch.bfloat16}
-)
+_SUPPORTED_DTYPES = frozenset({torch.float64, torch.float32, torch.float16, torch.bfloat16})
 
 
 def to_cpu_fp64(t: torch.Tensor) -> torch.Tensor:
