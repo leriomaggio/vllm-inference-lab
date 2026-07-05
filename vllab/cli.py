@@ -19,11 +19,46 @@ app = typer.Typer(
 
 @app.command("kernel-check")
 def kernel_check(
+    m: int = typer.Option(128, help="Rows of A / C."),
+    k: int = typer.Option(256, help="Shared (reduction) dimension."),
+    n: int = typer.Option(96, help="Cols of B / C."),
     seed: int = typer.Option(0, help="RNG seed for reproducible inputs."),
 ) -> None:
-    """L1: run the Triton kernels against the reference oracles (interpreter mode)."""
-    typer.echo("kernel-check: not implemented yet (milestone 3).")
-    raise typer.Exit(code=0)
+    """L1: validate matmul schedules against the fp64 oracle (interpreter mode)."""
+    from rich.console import Console
+    from rich.table import Table
+
+    from vllab.kernels.harness import run_matmul_check
+
+    check = run_matmul_check(m=m, k=k, n=n, seed=seed)
+    console = Console()
+
+    table = Table(title=f"matmul schedules vs fp64 oracle  (M,K,N)={check.shape}")
+    table.add_column("backend")
+    table.add_column("config")
+    table.add_column("max_abs", justify="right")
+    table.add_column("atol", justify="right")
+    table.add_column("verdict", justify="center")
+    for row in check.rows:
+        table.add_row(
+            row.backend,
+            row.config,
+            f"{row.max_abs:.3e}",
+            f"{row.atol:.3e}",
+            "[green]within[/]" if row.within else "[red]OVER[/]",
+        )
+    console.print(table)
+
+    console.print(
+        f"schedule divergence (tile-size low-bit gap): [bold]{check.schedule_divergence:.3e}[/] "
+        "— non-zero, yet within tolerance: correctness here is tolerance-defined, not bitwise."
+    )
+    if not check.triton_ran:
+        console.print(
+            "[yellow]triton not importable here[/] — real kernel skipped; "
+            "the PyTorch tiled model carries the schedule/accumulator lesson on CPU."
+        )
+    raise typer.Exit(code=0 if check.all_within else 1)
 
 
 @app.command("paged-demo")

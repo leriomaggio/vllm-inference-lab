@@ -53,9 +53,23 @@ vllab matrix         # L4: multi-backend correctness/latency matrix -> artifact
 vllab report         # render a markdown report from an artifact
 ```
 
+## Documentation
+
+Each layer ships a companion note explaining the concept, how to validate it, and
+the actual measured numbers:
+
+- [docs/reference-oracles.md](docs/reference-oracles.md) — L0: oracles, the fp64
+  rationale, and the tolerance vocabulary.
+- [docs/kernels.md](docs/kernels.md) — L1: the matmul spine, schedule vs bitwise
+  correctness, and running Triton in interpreter mode.
+- [docs/setup.md](docs/setup.md) — environments (base, vLLM CPU, `vllm-metal`, cloud GPU).
+
 ## Why tolerance, not equality
 
-See [docs/methodology.md](docs/methodology.md) for the oracle-and-tolerance frame,
-how tolerances are derived, and how a silent precision substitution (a path
-labelled fp32 that computes in reduced precision) is detected — a class of bug
-that pure latency benchmarking never catches.
+The whole lab rests on comparing a candidate schedule against an oracle *within a
+tolerance justified by precision and reduction length*, rather than demanding
+bitwise equality. A silent precision substitution — a path labelled fp32 that
+computes in reduced precision — is invisible to `dtype` inspection and to latency
+benchmarking, and shows up only when you measure outputs against a reference. The
+per-layer docs above make that concrete from a hand-written matmul up to a real
+engine.
