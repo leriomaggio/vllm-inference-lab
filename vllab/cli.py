@@ -63,11 +63,45 @@ def kernel_check(
 
 @app.command("paged-demo")
 def paged_demo(
-    corrupt: bool = typer.Option(False, help="Inject a block-table fault to show corruption."),
+    heads: int = typer.Option(3, help="Number of attention heads."),
+    seqlen: int = typer.Option(17, help="Sequence length (tokens)."),
+    dim: int = typer.Option(16, help="Head dimension."),
+    block_size: int = typer.Option(4, help="Tokens per KV block (page)."),
+    seed: int = typer.Option(0, help="RNG seed."),
 ) -> None:
-    """L2: verify paged decode == reference; optionally inject a block-table fault."""
-    typer.echo("paged-demo: not implemented yet (milestone 4).")
-    raise typer.Exit(code=0)
+    """L2: verify paged decode == reference, then inject a block-table fault."""
+    import torch
+    from rich.console import Console
+
+    from vllab.numerics import compare
+    from vllab.paged.paged_attention import block_table_fault_demo, paged_decode
+    from vllab.reference.kvcache import incremental_decode
+
+    console = Console()
+    g = torch.Generator().manual_seed(seed)
+    q = torch.randn(heads, seqlen, dim, generator=g)
+    k = torch.randn(heads, seqlen, dim, generator=g)
+    v = torch.randn(heads, seqlen, dim, generator=g)
+
+    paged = paged_decode(q, k, v, block_size=block_size)
+    reference = incremental_decode(q, k, v)
+    rep = compare(paged, reference, atol=1e-10)
+    console.print(
+        f"paged vs non-paged reference: max_abs={rep.max_abs:.3e} "
+        + ("[green]equal within fp64 noise[/]" if rep.within else "[red]DIVERGED[/]")
+    )
+
+    fault = block_table_fault_demo(q, k, v, block_size=block_size, corrupt_logical=0)
+    console.print(
+        f"block-table fault (logical 0: phys {fault.from_physical} -> {fault.to_physical}): "
+        f"max_abs_diff=[bold]{fault.max_abs_diff:.3e}[/], "
+        f"shape/dtype unchanged={fault.output_shape_unchanged}"
+    )
+    console.print(
+        "[yellow]Same shape, same dtype, wrong numbers[/] — a mis-mapped page is "
+        "silent to a latency benchmark and only a differential check catches it."
+    )
+    raise typer.Exit(code=0 if rep.within else 1)
 
 
 @app.command("bench")

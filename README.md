@@ -62,6 +62,8 @@ the actual measured numbers:
   rationale, and the tolerance vocabulary.
 - [docs/kernels.md](docs/kernels.md) — L1: the matmul spine, schedule vs bitwise
   correctness, and running Triton in interpreter mode.
+- [docs/paged-attention.md](docs/paged-attention.md) — L2: paged KV cache, the
+  block table, and the silent-corruption fault demo.
 - [docs/setup.md](docs/setup.md) — environments (base, vLLM CPU, `vllm-metal`, cloud GPU).
 
 ## Why tolerance, not equality
