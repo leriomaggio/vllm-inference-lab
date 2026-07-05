@@ -23,14 +23,21 @@ from vllab.numerics import to_cpu_fp64
 def reference_matmul(a: torch.Tensor, b: torch.Tensor) -> torch.Tensor:
     """Compute ``a @ b`` in fp64 on the CPU and return the fp64 result.
 
-    Args:
-        a: Tensor of shape ``(..., M, K)``.
-        b: Tensor of shape ``(..., K, N)`` broadcastable against ``a``.
+    Parameters
+    ----------
+    a : torch.Tensor
+        Tensor of shape ``(..., M, K)``.
+    b : torch.Tensor
+        Tensor of shape ``(..., K, N)`` broadcastable against ``a``.
 
-    Returns:
+    Returns
+    -------
+    torch.Tensor
         The product in ``torch.float64`` on the CPU. Callers cast to the precision
         they are validating and compare with a tolerance derived from that precision.
 
+    Notes
+    -----
     The reduction is always evaluated on the CPU, regardless of where the inputs
     live. This keeps the oracle a single, device-independent source of truth — a GPU
     reduction is order-nondeterministic, and Apple's MPS backend has no fp64 at all —
@@ -66,13 +73,20 @@ def tiled_matmul(
     * **accumulator width** — a narrow ``accum_dtype`` (e.g. fp16) loses precision
       that a wide one (fp32) keeps, and the error grows with ``K``.
 
-    Args:
-        a: Tensor of shape ``(M, K)``.
-        b: Tensor of shape ``(K, N)``.
-        block_k: Reduction tile size along K.
-        accum_dtype: Dtype of the running accumulator.
+    Parameters
+    ----------
+    a : torch.Tensor
+        Tensor of shape ``(M, K)``.
+    b : torch.Tensor
+        Tensor of shape ``(K, N)``.
+    block_k : int, optional
+        Reduction tile size along K.
+    accum_dtype : torch.dtype, optional
+        Dtype of the running accumulator.
 
-    Returns:
+    Returns
+    -------
+    torch.Tensor
         The product in ``accum_dtype``. The *inputs* are read in their own dtype;
         each block product is computed and then added into the accumulator, which
         is the behaviour that makes accumulator width observable.

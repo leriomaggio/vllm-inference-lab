@@ -91,14 +91,20 @@ def triton_matmul(
 ) -> torch.Tensor:
     """Compute ``a @ b`` with the tiled Triton kernel.
 
-    Args:
-        a: ``(M, K)`` fp32 tensor (strides are passed through, so transposed or
-            sliced inputs work unchanged).
-        b: ``(K, N)`` fp32 tensor.
-        block_m, block_n, block_k: Output-tile and K-step sizes. Changing them
-            changes the summation order — outputs then differ in the low bits.
+    Parameters
+    ----------
+    a : torch.Tensor
+        ``(M, K)`` fp32 tensor (strides are passed through, so transposed or
+        sliced inputs work unchanged).
+    b : torch.Tensor
+        ``(K, N)`` fp32 tensor.
+    block_m, block_n, block_k : int, optional
+        Output-tile and K-step sizes. Changing them changes the summation
+        order — outputs then differ in the low bits.
 
-    Returns:
+    Returns
+    -------
+    torch.Tensor
         ``(M, N)`` fp32 result.
     """
     if not _HAS_TRITON:

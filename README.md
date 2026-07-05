@@ -93,6 +93,16 @@ vllab/
 transformers) are imported lazily and guarded, so any module imports and its tests
 run — skipping cleanly — regardless of what is installed on a given machine.
 
+**Docstring style:** all docstrings follow the
+[NumPy documentation style](https://numpydoc.readthedocs.io/en/latest/format.html)
+(`Parameters`/`Returns`/`Attributes`/`Notes` sections with underlined headings),
+used consistently across the package rather than the Google style. This is a
+deliberate choice: the numerical arguments carry prose-heavy, multi-paragraph
+rationale (tolerance derivations, the `sqrt(K)·u` error model, device
+normalisation), and NumPy's section layout — with its dedicated `Notes` block —
+reads better for that kind of explanatory documentation and matches the
+scientific-Python (NumPy/SciPy) ecosystem this lab builds on.
+
 ## Documentation
 
 Each layer ships a companion note explaining the concept, how to validate it, and

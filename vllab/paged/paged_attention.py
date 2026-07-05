@@ -101,12 +101,18 @@ def paged_decode(
 ) -> torch.Tensor:
     """Decode a sequence token-by-token through a :class:`PagedKVCache`.
 
-    Args:
-        q, k, v: ``(H, T, D)`` sequences.
-        block_size: Tokens per KV block.
-        num_blocks: Pool size; defaults to exactly enough for the sequence.
+    Parameters
+    ----------
+    q, k, v : torch.Tensor
+        ``(H, T, D)`` sequences.
+    block_size : int, optional
+        Tokens per KV block.
+    num_blocks : int or None, optional
+        Pool size; defaults to exactly enough for the sequence.
 
-    Returns:
+    Returns
+    -------
+    torch.Tensor
         ``(H, T, D)`` — must equal the non-paged reference decode within fp64 noise.
     """
     heads, seqlen, dim = q.shape

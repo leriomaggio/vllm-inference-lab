@@ -9,13 +9,18 @@ from dataclasses import dataclass, field
 class GenResult:
     """A single prompt's greedy generation from one engine.
 
-    Attributes:
-        prompt: The input prompt text.
-        token_ids: Generated token ids (the continuation only, not the prompt).
-        text: Decoded continuation text.
-        step_logprobs: Log-probability each engine assigned to the token it
-            actually emitted at each step (one per generated token). Used for a
-            fine-grained differential beyond exact token-id matching.
+    Attributes
+    ----------
+    prompt : str
+        The input prompt text.
+    token_ids : list[int]
+        Generated token ids (the continuation only, not the prompt).
+    text : str
+        Decoded continuation text.
+    step_logprobs : list[float]
+        Log-probability each engine assigned to the token it actually emitted at
+        each step (one per generated token). Used for a fine-grained differential
+        beyond exact token-id matching.
     """
 
     prompt: str

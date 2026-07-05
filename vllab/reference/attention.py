@@ -74,11 +74,16 @@ def online_softmax_attention(
     the block's contribution — mathematically identical to the full softmax, but
     with ``O(block_size)`` working memory instead of ``O(Sk)``.
 
-    Args:
-        block_size: Number of keys processed per step (the KV tile).
-        accum_dtype: Precision of the running statistics and output accumulator.
+    Parameters
+    ----------
+    block_size : int, optional
+        Number of keys processed per step (the KV tile).
+    accum_dtype : torch.dtype, optional
+        Precision of the running statistics and output accumulator.
 
-    Returns:
+    Returns
+    -------
+    torch.Tensor
         Output in ``accum_dtype``. Changing ``block_size`` changes the summation
         order (results differ in the low bits); narrowing ``accum_dtype`` widens
         the gap to the oracle.

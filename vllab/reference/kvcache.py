@@ -37,11 +37,14 @@ class NonPagedKVCache:
     def append(self, k_t: torch.Tensor, v_t: torch.Tensor) -> None:
         """Append one or more tokens' keys/values.
 
-        Args:
-            k_t: ``(..., n, D)`` — a length axis is always required (use ``n == 1``
-                for a single decode step). Requiring it removes the ambiguity
-                between a single token and a chunk when leading dims are present.
-            v_t: Matching values, same rank as ``k_t``.
+        Parameters
+        ----------
+        k_t : torch.Tensor
+            ``(..., n, D)`` — a length axis is always required (use ``n == 1``
+            for a single decode step). Requiring it removes the ambiguity
+            between a single token and a chunk when leading dims are present.
+        v_t : torch.Tensor
+            Matching values, same rank as ``k_t``.
         """
         if k_t.shape[-1] != v_t.shape[-1] or k_t.ndim != v_t.ndim:
             raise ValueError("key/value shapes are inconsistent")
@@ -54,10 +57,14 @@ class NonPagedKVCache:
     def attend(self, q_t: torch.Tensor) -> torch.Tensor:
         """Attend a query against the full cache (all cached keys are visible).
 
-        Args:
-            q_t: ``(..., Sq, D)``.
+        Parameters
+        ----------
+        q_t : torch.Tensor
+            ``(..., Sq, D)``.
 
-        Returns:
+        Returns
+        -------
+        torch.Tensor
             ``(..., Sq, Dv)`` attention output (fp64, from the oracle softmax).
         """
         if self._keys is None:
@@ -74,11 +81,16 @@ def incremental_decode(
 ) -> torch.Tensor:
     """Decode a full sequence one token at a time through a ``NonPagedKVCache``.
 
-    Args:
-        q_seq, k_seq, v_seq: ``(..., T, D)`` sequences.
-        scale: Attention scale (defaults to ``1/sqrt(D)`` inside the oracle).
+    Parameters
+    ----------
+    q_seq, k_seq, v_seq : torch.Tensor
+        ``(..., T, D)`` sequences.
+    scale : float, optional
+        Attention scale (defaults to ``1/sqrt(D)`` inside the oracle).
 
-    Returns:
+    Returns
+    -------
+    torch.Tensor
         ``(..., T, Dv)`` — equal to one-shot causal attention over the sequence.
     """
     t = q_seq.shape[-2]
