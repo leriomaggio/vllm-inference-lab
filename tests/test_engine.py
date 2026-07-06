@@ -56,6 +56,27 @@ def test_compare_prompt_mismatch_raises() -> None:
 
 
 # --------------------------------------------------------------------------- #
+# pure KV-cache footprint math (no engine)
+# --------------------------------------------------------------------------- #
+def test_kv_blocks_for_rounds_up() -> None:
+    from vllab.engine.types import KVCacheReport
+
+    assert KVCacheReport.blocks_for(0, 128) == 0
+    assert KVCacheReport.blocks_for(1, 128) == 1
+    assert KVCacheReport.blocks_for(128, 128) == 1
+    assert KVCacheReport.blocks_for(129, 128) == 2
+    with pytest.raises(ValueError, match="block_size"):
+        KVCacheReport.blocks_for(10, 0)
+
+
+def test_kv_capacity_tokens() -> None:
+    from vllab.engine.types import KVCacheReport
+
+    rep = KVCacheReport(block_size=128, num_blocks=455, cache_dtype="auto", kv_bytes=2**32)
+    assert rep.capacity_tokens == 128 * 455
+
+
+# --------------------------------------------------------------------------- #
 # gated integration tests (download a model)
 # --------------------------------------------------------------------------- #
 @pytest.mark.skipif(not _RUN_ENGINE, reason="set VLLAB_RUN_ENGINE_TESTS=1 to run engine tests")
