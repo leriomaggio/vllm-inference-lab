@@ -46,7 +46,7 @@ class VLLMRunner:
         model_id: str,
         *,
         dtype: str = "fp32",
-        seed: int = 0,
+        seed: int = 0x9E3779B9,
         max_model_len: int | None = 2048,
     ) -> None:
         if not _HAS_VLLM:

@@ -45,7 +45,7 @@ class HFReference:
         *,
         dtype: str = "fp32",
         device: str = "cpu",
-        seed: int = 0,
+        seed: int = 0x9E3779B9,
     ) -> None:
         if not _HAS_HF:
             raise RuntimeError("transformers is not installed (pip install '.[hf]')")
