@@ -32,6 +32,13 @@ except Exception:  # pragma: no cover - exercised where vLLM is absent
 
 
 def vllm_available() -> bool:
+    """Whether the optional ``vllm`` dependency is importable.
+
+    Returns
+    -------
+    bool
+        ``True`` if ``vllm`` imported successfully at module load.
+    """
     return _HAS_VLLM
 
 
@@ -39,7 +46,41 @@ _DTYPE_NAMES = {"fp32": "float32", "fp16": "float16", "bf16": "bfloat16"}
 
 
 class VLLMRunner:
-    """Greedy decoding from an offline ``vllm.LLM`` with per-step logprobs."""
+    """Greedy decoding from an offline ``vllm.LLM`` with per-step logprobs.
+
+    Presents the same surface as
+    :class:`~vllab.engine.hf_reference.HFReference` so the two engines can be
+    compared directly.
+
+    Parameters
+    ----------
+    model_id : str
+        HuggingFace model identifier or local path to load into ``vllm.LLM``.
+    dtype : {"fp32", "fp16", "bf16"}, optional
+        Parameter dtype. Default ``"fp32"``. On macOS CPU only fp32/fp16 run.
+    seed : int, optional
+        Seed passed to the engine. Default ``0x9E3779B9`` (the golden-ratio
+        constant φ·2³², chosen for its well-distributed bit pattern rather than
+        a low-entropy value like ``0``). Note that at temperature 0 (greedy)
+        the seed does not affect outputs; it matters only if sampling is added.
+    max_model_len : int or None, optional
+        Maximum sequence length the engine is configured for, or ``None`` to
+        use the model default. Default ``2048``.
+
+    Attributes
+    ----------
+    model_id : str
+        The model identifier the instance was built from.
+    dtype : str
+        The short dtype name the engine was configured with.
+
+    Raises
+    ------
+    RuntimeError
+        If vLLM is not installed.
+    ValueError
+        If ``dtype`` is not a recognised name.
+    """
 
     def __init__(
         self,
@@ -67,7 +108,22 @@ class VLLMRunner:
         )
 
     def greedy_generate(self, prompts: list[str], *, max_new_tokens: int = 16) -> list[GenResult]:
-        """Greedy-decode each prompt (temperature 0), returning ids, text, logprobs."""
+        """Greedy-decode each prompt (temperature 0), returning ids, text, logprobs.
+
+        Parameters
+        ----------
+        prompts : list[str]
+            Prompts to decode.
+        max_new_tokens : int, optional
+            Maximum number of tokens to generate per prompt. Default ``16``.
+
+        Returns
+        -------
+        list[GenResult]
+            One result per prompt, in input order. ``step_logprobs`` holds the
+            log-probability vLLM reported for each emitted token, or ``nan``
+            where none was returned.
+        """
         from vllm import SamplingParams
 
         sp = SamplingParams(temperature=0.0, max_tokens=max_new_tokens, logprobs=1)
@@ -91,7 +147,13 @@ class VLLMRunner:
         """Best-effort KV-cache configuration (block size and number of blocks).
 
         Reads the engine's cache config through non-public attributes, so it is
-        wrapped defensively; returns an empty dict if the layout changes.
+        wrapped defensively.
+
+        Returns
+        -------
+        dict[str, int]
+            Keys ``block_size`` and, when available, ``num_cpu_blocks`` /
+            ``num_gpu_blocks``. Empty if the internal layout has changed.
         """
         info: dict[str, int] = {}
         try:  # pragma: no cover - depends on vLLM internals
