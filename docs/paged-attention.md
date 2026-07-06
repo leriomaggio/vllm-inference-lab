@@ -16,7 +16,8 @@ mode.
 | File | Role |
 |------|------|
 | `vllab/paged/block_table.py` | `BlockTable`: logical→physical mapping over a free pool; `ensure_capacity`, `locate`, `corrupt`. |
-| `vllab/paged/paged_attention.py` | `PagedKVCache` (block pool + append + gather + attend), `paged_decode`, and the fault demo. |
+| `vllab/paged/paged_attention.py` | `PagedKVCache` (block pool + append + gather + attend) and `paged_decode`. |
+| `vllab/paged/faults.py` | `block_table_fault_demo` + `FaultReport`: repoint one logical block and show the output corrupts silently. |
 
 ### Storage layout
 

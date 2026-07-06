@@ -8,7 +8,8 @@ import torch
 
 from vllab.numerics import compare
 from vllab.paged.block_table import BlockTable
-from vllab.paged.paged_attention import block_table_fault_demo, paged_decode
+from vllab.paged.faults import block_table_fault_demo
+from vllab.paged.paged_attention import paged_decode
 from vllab.reference.attention import softmax_attention
 from vllab.reference.kvcache import incremental_decode
 

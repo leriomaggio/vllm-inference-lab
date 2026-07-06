@@ -74,7 +74,8 @@ def paged_demo(
     from rich.console import Console
 
     from vllab.numerics import compare
-    from vllab.paged.paged_attention import block_table_fault_demo, paged_decode
+    from vllab.paged.faults import block_table_fault_demo
+    from vllab.paged.paged_attention import paged_decode
     from vllab.reference.kvcache import incremental_decode
 
     console = Console()
