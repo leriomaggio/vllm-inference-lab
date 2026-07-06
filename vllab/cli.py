@@ -105,12 +105,110 @@ def paged_demo(
     raise typer.Exit(code=0 if rep.within else 1)
 
 
+_BENCH_PROMPTS = [
+    "The capital of France is",
+    "Water boils at",
+    "In the beginning",
+    "The three primary colors are",
+]
+
+
 @app.command("bench")
 def bench(
     model: str = typer.Option("facebook/opt-125m", help="Model id."),
+    engine: str = typer.Option("vllm", help="Engine to bench: 'vllm' or 'hf'."),
+    dtype: str = typer.Option("fp32", help="Parameter dtype: fp32 or fp16."),
+    max_new_tokens: int = typer.Option(32, help="Decode budget per prompt (full run)."),
+    repeats: int = typer.Option(3, help="Number of timed full runs."),
+    warmup: int = typer.Option(1, help="Untimed warm-up runs before timing."),
 ) -> None:
-    """L3: measure single-engine latency / throughput metrics (illustrative on CPU)."""
-    typer.echo("bench: not implemented yet (milestone 5-6).")
+    """L3: single-engine latency / throughput + KV-cache introspection.
+
+    Numbers are illustrative on CPU with a tiny model, not production throughput;
+    the prefill/decode split shows the two regimes of autoregressive inference.
+    """
+    from rich.console import Console
+    from rich.table import Table
+
+    from vllab.engine.bench import run_bench
+
+    console = Console()
+
+    if engine == "vllm":
+        from vllab.engine.vllm_runner import VLLMRunner, vllm_available
+
+        if not vllm_available():
+            console.print("[red]vLLM is not installed[/] — see docs/setup.md for the CPU build.")
+            raise typer.Exit(code=2)
+        eng = VLLMRunner(model, dtype=dtype)
+    elif engine == "hf":
+        from vllab.engine.hf_reference import HFReference, transformers_available
+
+        if not transformers_available():
+            console.print("[red]transformers is not installed[/] — pip install '.[hf]'.")
+            raise typer.Exit(code=2)
+        eng = HFReference(model, dtype=dtype)
+    else:
+        console.print(f"[red]unknown engine {engine!r}[/] — choose 'vllm' or 'hf'.")
+        raise typer.Exit(code=2)
+
+    result = run_bench(
+        eng,
+        _BENCH_PROMPTS,
+        engine_label=engine,
+        model_id=model,
+        dtype=dtype,
+        max_new_tokens=max_new_tokens,
+        repeats=repeats,
+        warmup=warmup,
+    )
+
+    lo, hi = result.wall_range
+    table = Table(
+        title=f"{engine} {dtype} latency  ({result.num_prompts} prompts x "
+        f"{result.max_new_tokens} tok, {repeats} runs)"
+    )
+    table.add_column("metric")
+    table.add_column("value", justify="right")
+    table.add_row("median wall", f"{result.median_wall_s * 1e3:.1f} ms")
+    table.add_row("wall min-max", f"{lo * 1e3:.1f} - {hi * 1e3:.1f} ms")
+    table.add_row("end-to-end throughput", f"{result.median_tokens_per_s:.1f} tok/s")
+    if result.prefill is not None:
+        table.add_row("prefill (TTFT proxy)", f"{result.prefill.wall_s * 1e3:.1f} ms")
+    decode = result.decode_tokens_per_s
+    table.add_row("decode throughput (est.)", f"{decode:.1f} tok/s" if decode else "n/a")
+    console.print(table)
+
+    # KV-cache introspection (vLLM only).
+    if engine == "vllm":
+        try:
+            report = eng.kv_cache_report(_BENCH_PROMPTS)
+        except RuntimeError as exc:
+            console.print(f"[yellow]KV-cache introspection unavailable[/]: {exc}")
+        else:
+            kv = Table(title="KV-cache layout")
+            kv.add_column("property")
+            kv.add_column("value", justify="right")
+            kv.add_row("block size (tokens/page)", str(report.block_size))
+            kv.add_row("device KV blocks", str(report.num_blocks))
+            kv.add_row("capacity", f"{report.capacity_tokens:,} tokens")
+            kv.add_row("cache dtype", report.cache_dtype)
+            kv.add_row("reserved KV pool", f"{report.kv_bytes / 2**30:.2f} GiB")
+            console.print(kv)
+
+            foot = Table(title="per-prompt prefill footprint")
+            foot.add_column("prompt")
+            foot.add_column("tokens", justify="right")
+            foot.add_column("blocks", justify="right")
+            for f in report.per_prompt:
+                shown = f.prompt if len(f.prompt) <= 30 else f.prompt[:27] + "..."
+                foot.add_row(shown, str(f.tokens), str(f.blocks))
+            console.print(foot)
+
+    console.print(
+        "[dim]CPU + tiny model: figures are illustrative of the prefill/decode "
+        "structure, not representative throughput.[/]"
+    )
     raise typer.Exit(code=0)
 
 

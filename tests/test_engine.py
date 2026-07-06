@@ -56,6 +56,71 @@ def test_compare_prompt_mismatch_raises() -> None:
 
 
 # --------------------------------------------------------------------------- #
+# pure benchmark logic (no engine)
+# --------------------------------------------------------------------------- #
+class _FakeEngine:
+    """Deterministic stand-in: emits ``min(max_new_tokens, cap)`` tokens per prompt."""
+
+    def __init__(self, cap: int = 100) -> None:
+        self.cap = cap
+        self.calls: list[int] = []
+
+    def greedy_generate(self, prompts, *, max_new_tokens: int = 16):
+        self.calls.append(max_new_tokens)
+        n = min(max_new_tokens, self.cap)
+        return [GenResult(p, list(range(n)), "", []) for p in prompts]
+
+
+def test_bench_result_derived_stats() -> None:
+    from vllab.engine.bench import BenchResult, LatencySample
+
+    res = BenchResult(
+        engine="fake",
+        model_id="m",
+        dtype="fp32",
+        num_prompts=2,
+        max_new_tokens=10,
+        samples=[LatencySample(1.0, 20), LatencySample(2.0, 20), LatencySample(3.0, 20)],
+        prefill=LatencySample(0.5, 2),
+    )
+    assert res.median_wall_s == 2.0
+    assert res.wall_range == (1.0, 3.0)
+    # median-wall sample is the 2.0s / 20-token run -> 10 tok/s
+    assert res.median_tokens_per_s == pytest.approx(10.0)
+    # decode split: (20-2) tokens / (2.0-0.5) s = 12 tok/s
+    assert res.decode_tokens_per_s == pytest.approx(12.0)
+
+
+def test_bench_decode_split_none_without_prefill() -> None:
+    from vllab.engine.bench import BenchResult, LatencySample
+
+    res = BenchResult("f", "m", "fp32", 1, 4, [LatencySample(1.0, 4)], prefill=None)
+    assert res.decode_tokens_per_s is None
+
+
+def test_run_bench_calls_and_counts() -> None:
+    from vllab.engine.bench import run_bench
+
+    eng = _FakeEngine()
+    res = run_bench(
+        eng, ["a", "b"], engine_label="fake", model_id="m", dtype="fp32",
+        max_new_tokens=8, repeats=3, warmup=1, measure_prefill=True,
+    )
+    # 1 warm-up + 3 timed full runs, all at 8 tokens; then 1 prefill warm-up + 1 timed at 1.
+    assert eng.calls == [8, 8, 8, 8, 1, 1]
+    assert len(res.samples) == 3
+    assert all(s.new_tokens == 2 * 8 for s in res.samples)  # 2 prompts x 8 tokens
+    assert res.prefill is not None and res.prefill.new_tokens == 2 * 1
+
+
+def test_run_bench_rejects_empty_prompts() -> None:
+    from vllab.engine.bench import run_bench
+
+    with pytest.raises(ValueError, match="non-empty"):
+        run_bench(_FakeEngine(), [], engine_label="f", model_id="m", dtype="fp32")
+
+
+# --------------------------------------------------------------------------- #
 # pure KV-cache footprint math (no engine)
 # --------------------------------------------------------------------------- #
 def test_kv_blocks_for_rounds_up() -> None:
