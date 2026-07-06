@@ -19,7 +19,23 @@ from .paged_attention import PagedKVCache
 
 @dataclass(frozen=True)
 class FaultReport:
-    """Result of a block-table fault-injection experiment."""
+    """Result of a block-table fault-injection experiment.
+
+    Attributes
+    ----------
+    max_abs_diff : float
+        Largest absolute difference between the clean and faulty outputs, in
+        fp64. Non-zero is the whole point: the fault changed the numbers.
+    output_shape_unchanged : bool
+        ``True`` when the faulty output has the same shape and dtype as the clean
+        one — i.e. the corruption is silent to any shape/dtype check.
+    corrupted_logical : int
+        Logical block index that was repointed.
+    from_physical : int
+        Physical block the logical index mapped to before the fault.
+    to_physical : int
+        Physical block it was redirected to.
+    """
 
     max_abs_diff: float
     output_shape_unchanged: bool
@@ -42,6 +58,30 @@ def block_table_fault_demo(
     Fills a paged cache with the sequence, records the clean final-token output,
     then repoints one logical block at a different physical block and recomputes.
     The output stays the same shape and dtype — only the numbers change.
+
+    Parameters
+    ----------
+    q, k, v : torch.Tensor
+        ``(H, T, D)`` sequences; only the final query row is scored.
+    block_size : int, optional
+        Tokens per KV block (page).
+    corrupt_logical : int, optional
+        Logical block index to repoint. Must be within the blocks allocated for
+        the sequence.
+    scale : float or None, optional
+        Softmax scale forwarded to the attention step; ``None`` uses
+        ``1 / sqrt(head_dim)``.
+
+    Returns
+    -------
+    FaultReport
+        The clean-vs-faulty comparison, including the max absolute difference and
+        whether shape/dtype were preserved.
+
+    Raises
+    ------
+    IndexError
+        If ``corrupt_logical`` is beyond the allocated blocks.
     """
     heads, seqlen, dim = q.shape
     # Two extra blocks so there is a valid-but-wrong physical target to point at.

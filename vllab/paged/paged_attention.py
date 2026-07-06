@@ -38,6 +38,25 @@ class PagedKVCache:
         scale: float | None = None,
         dtype: torch.dtype = torch.float32,
     ) -> None:
+        """Allocate empty K and V block pools for a single sequence.
+
+        Parameters
+        ----------
+        num_heads : int
+            Number of attention heads ``H``.
+        head_dim : int
+            Per-head feature dimension ``D``.
+        block_size : int
+            Tokens per KV block (page).
+        num_blocks : int
+            Physical blocks in the pool. Caps the sequence at
+            ``num_blocks * block_size`` tokens before the pool is exhausted.
+        scale : float or None, optional
+            Softmax scale forwarded to the attention oracle; ``None`` uses
+            ``1 / sqrt(head_dim)``.
+        dtype : torch.dtype, optional
+            Storage dtype of the K and V pools (default ``torch.float32``).
+        """
         self.num_heads = num_heads
         self.head_dim = head_dim
         self.block_size = block_size
@@ -58,7 +77,23 @@ class PagedKVCache:
         return self._table
 
     def append(self, k_t: torch.Tensor, v_t: torch.Tensor) -> None:
-        """Append one token's keys/values, each shaped ``(H, D)``."""
+        """Append one token's keys and values to the cache.
+
+        Grows the block table when the new token spills into a fresh block, then
+        writes the token into its ``(physical_block, slot)`` cell.
+
+        Parameters
+        ----------
+        k_t : torch.Tensor
+            This token's keys, shaped ``(H, D)``.
+        v_t : torch.Tensor
+            This token's values, shaped ``(H, D)``.
+
+        Raises
+        ------
+        ValueError
+            If ``k_t`` is not shaped ``(num_heads, head_dim)``.
+        """
         expected = (self.num_heads, self.head_dim)
         if k_t.shape != expected:
             raise ValueError(f"expected k_t {expected}, got {tuple(k_t.shape)}")
@@ -69,7 +104,28 @@ class PagedKVCache:
         self._v[phys, :, slot, :] = v_t
 
     def _gather(self, pool: torch.Tensor) -> torch.Tensor:
-        """Reassemble ``(H, T, D)`` from scattered blocks via the block table."""
+        """Reassemble a contiguous ``(H, T, D)`` view from the scattered blocks.
+
+        Walks the logical blocks in order, resolves each through the block table,
+        slices out its live tokens, and concatenates along the token axis. This is
+        the read path a block-table fault corrupts silently.
+
+        Parameters
+        ----------
+        pool : torch.Tensor
+            Either the key or the value pool, shaped
+            ``(num_blocks, H, block_size, D)``.
+
+        Returns
+        -------
+        torch.Tensor
+            ``(H, T, D)`` with ``T == self.length`` tokens in sequence order.
+
+        Raises
+        ------
+        RuntimeError
+            If the cache is empty (nothing has been appended yet).
+        """
         if self._length == 0:
             raise RuntimeError("cache is empty; append before gather")
         chunks = []
@@ -84,7 +140,19 @@ class PagedKVCache:
         return torch.cat(chunks, dim=1)  # (H, T, D)
 
     def attend(self, q_t: torch.Tensor) -> torch.Tensor:
-        """Attend ``q_t`` ``(H, Sq, D)`` against the full gathered cache."""
+        """Attend a query against the full gathered cache.
+
+        Parameters
+        ----------
+        q_t : torch.Tensor
+            Query block shaped ``(H, Sq, D)`` (``Sq == 1`` for a single decode
+            step).
+
+        Returns
+        -------
+        torch.Tensor
+            ``(H, Sq, D)`` attention output (fp64, from the oracle softmax).
+        """
         k_full = self._gather(self._k)
         v_full = self._gather(self._v)
         return softmax_attention(q_t, k_full, v_full, causal=False, scale=self._scale)
@@ -108,7 +176,11 @@ def paged_decode(
     block_size : int, optional
         Tokens per KV block.
     num_blocks : int or None, optional
-        Pool size; defaults to exactly enough for the sequence.
+        Pool size; defaults to exactly enough for the sequence
+        (``ceil(T / block_size)``).
+    scale : float or None, optional
+        Softmax scale forwarded to each attention step; ``None`` uses
+        ``1 / sqrt(head_dim)``.
 
     Returns
     -------
