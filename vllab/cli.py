@@ -212,13 +212,107 @@ def bench(
     raise typer.Exit(code=0)
 
 
+_VALIDATE_PROMPTS = [
+    "The capital of France is",
+    "Water boils at",
+    "In the beginning",
+    "The three primary colors are",
+    "Once upon a time",
+]
+
+
 @app.command("validate")
 def validate(
-    model: str = typer.Option("Qwen/Qwen2.5-0.5B-Instruct", help="Model id."),
+    model: str = typer.Option("facebook/opt-125m", help="Model id."),
+    max_new_tokens: int = typer.Option(16, help="Greedy tokens per prompt."),
+    skip_fp16: bool = typer.Option(False, help="Skip the fp16 precision axis."),
 ) -> None:
-    """L3: differential correctness vLLM vs HuggingFace + fp32/fp16 precision axis."""
-    typer.echo("validate: not implemented yet (milestone 6).")
-    raise typer.Exit(code=0)
+    """L3: differential correctness (vLLM fp32 vs HF fp32) + fp32/fp16 precision axis.
+
+    The fp32-vs-fp32 token match is the correctness gate (greedy is deterministic,
+    so a correct engine matches the oracle exactly). The fp16 axis measures how far
+    reduced precision drifts from the fp32 oracle, classified against a dtype-derived
+    logprob band.
+    """
+    from rich.console import Console
+    from rich.table import Table
+
+    from vllab.engine.differential import compare_generations
+    from vllab.engine.hf_reference import HFReference, transformers_available
+    from vllab.engine.precision import precision_result
+    from vllab.engine.vllm_runner import VLLMRunner, vllm_available
+
+    console = Console()
+    if not transformers_available():
+        console.print("[red]transformers is not installed[/] — pip install '.[hf]'.")
+        raise typer.Exit(code=2)
+    if not vllm_available():
+        console.print("[red]vLLM is not installed[/] — see docs/setup.md for the CPU build.")
+        raise typer.Exit(code=2)
+
+    prompts = _VALIDATE_PROMPTS
+    hf = HFReference(model, dtype="fp32")
+    hidden = int(hf.model.config.hidden_size)
+    reference = hf.greedy_generate(prompts, max_new_tokens=max_new_tokens)
+
+    # --- correctness gate: vLLM fp32 vs HF fp32 (exact token match expected) ---
+    vllm_fp32 = VLLMRunner(model, dtype="fp32")
+    fp32_cand = vllm_fp32.greedy_generate(prompts, max_new_tokens=max_new_tokens)
+    fp32_diff = compare_generations(reference, fp32_cand)
+    fp32 = precision_result(fp32_diff, candidate_dtype="fp32", reduction_length=hidden)
+
+    gate = Table(title=f"correctness gate — vLLM fp32 vs HF fp32  ({model}, K={hidden})")
+    gate.add_column("check")
+    gate.add_column("value", justify="right")
+    gate.add_column("verdict", justify="center")
+    gate.add_row(
+        "token exact match",
+        f"{fp32_diff.exact_match_fraction:.0%}",
+        "[green]PASS[/]" if fp32.token_exact else "[red]FAIL[/]",
+    )
+    gate.add_row(
+        "logprob gap vs fp32 band",
+        f"{fp32_diff.max_logprob_gap:.2e} / {fp32.band:.2e}",
+        "[green]within[/]" if fp32.logprob_within_band else "[red]OVER[/]",
+    )
+    console.print(gate)
+
+    ok = fp32.token_exact and fp32.logprob_within_band
+
+    # --- precision axis: vLLM fp16 vs HF fp32 oracle ---
+    if not skip_fp16:
+        vllm_fp16 = VLLMRunner(model, dtype="fp16")
+        fp16_cand = vllm_fp16.greedy_generate(prompts, max_new_tokens=max_new_tokens)
+        fp16_diff = compare_generations(reference, fp16_cand)
+        fp16 = precision_result(fp16_diff, candidate_dtype="fp16", reduction_length=hidden)
+
+        axis = Table(title="precision axis — vLLM fp16 vs HF fp32 oracle")
+        axis.add_column("check")
+        axis.add_column("value", justify="right")
+        axis.add_column("verdict", justify="center")
+        axis.add_row(
+            "token agreement",
+            f"{fp16_diff.token_agreement_rate:.2%}",
+            "[green]exact[/]" if fp16.token_exact else "[yellow]flips[/]",
+        )
+        axis.add_row(
+            "logprob gap vs fp16 band",
+            f"{fp16_diff.max_logprob_gap:.2e} / {fp16.band:.2e}",
+            "[green]within[/]" if fp16.logprob_within_band else "[red]OVER[/]",
+        )
+        axis.add_row(
+            "gap vs fp32 schedule floor",
+            f"{fp16.band_ratio:.0f}x",
+            "[yellow]precision effect[/]" if fp16.exceeds_oracle_band else "[green]schedule[/]",
+        )
+        console.print(axis)
+        console.print(
+            f"[dim]fp16 diverges from the fp32 oracle ~{fp16.band_ratio:.0f}x the fp32 "
+            "schedule-noise floor — invisible to token-id equality, plain in the logprobs.[/]"
+        )
+        ok = ok and fp16.logprob_within_band
+
+    raise typer.Exit(code=0 if ok else 1)
 
 
 @app.command("matrix")

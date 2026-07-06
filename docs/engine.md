@@ -116,10 +116,84 @@ What these numbers say:
    split and the KV-cache accounting, not the absolute tok/s. Real numbers are the
    documented cloud-GPU path.
 
-## What comes next in L3
+## Differential validation + precision axis
 
-The **differential validation** half compares vLLM's greedy output against the
-HuggingFace fp32 oracle token-for-token (greedy is deterministic, so a correct
-engine must match exactly), and measures the **fp32-vs-fp16** divergence — the
-recurring precision axis, now at the engine altitude. That is the `vllab validate`
-command and `docs/engine.md`'s second section.
+`vllab validate` holds the real engine to the oracle. It has two parts, both
+driven by the same differential harness (`compare_generations`), which reports the
+identical-token prefix length and the largest per-step log-probability gap over
+that prefix.
+
+### The correctness gate — vLLM fp32 vs HF fp32
+
+Greedy decoding is deterministic: given identical logits, `argmax` is identical.
+vLLM fp32 and HF fp32 compute the *same* math in a *different kernel schedule*, so
+the tokens must match **exactly** and the logprobs must agree to within fp32
+schedule noise. This is a hard gate — any token mismatch is a bug in the engine
+integration, not a tolerance question.
+
+### The precision axis — vLLM fp16 vs the fp32 oracle
+
+fp16 rounds the logits at ~2⁻¹⁰ instead of ~2⁻²³. The tolerance on the per-step
+logprob gap comes from the same `reduction_atol(dtype, K)` model used at L1/L2,
+with `K` = the model **hidden size** (the reduction behind each logit is
+`hidden_state @ lm_head.T`, a sum over hidden). fp16's band is ~8200× looser than
+fp32's because its unit roundoff is 8200× larger.
+
+The finding: fp16 may still match tokens (greedy is robust when the argmax margin
+is wide), but its logprob gap is **orders of magnitude above the fp32
+schedule-noise floor**. `validate` reports that ratio — the precision effect made
+measurable, invisible to a token-id check.
+
+### Validation
+
+```bash
+VLLM_ENABLE_V1_MULTIPROCESSING=0 VLLM_CPU_KVCACHE_SPACE=4 \
+    vllab validate --model facebook/opt-125m --max-new-tokens 16
+```
+
+#### Measured — `facebook/opt-125m`, K = 768, 5 prompts × 16 tokens (CPU)
+
+```
+correctness gate — vLLM fp32 vs HF fp32
+  token exact match          100%                     PASS
+  logprob gap vs fp32 band   1.10e-05 / 2.64e-05      within
+
+precision axis — vLLM fp16 vs HF fp32 oracle
+  token agreement            100.00%                  exact
+  logprob gap vs fp16 band   8.33e-03 / 2.17e-01      within
+  gap vs fp32 schedule floor 315x                     precision effect
+```
+
+Reading these three rows top to bottom:
+
+1. **fp32 is a hard match.** Same tokens, and the logprob gap (1.1e-5) sits at
+   ~0.4× the fp32 band — the residual is pure kernel-schedule noise between vLLM's
+   fused kernels and HF's eager path.
+2. **fp16 keeps the tokens but not the numbers.** On these prompts every token
+   still agrees (no argmax flipped within 16 steps), yet the logprob gap is
+   8.3e-3 — **~750× the fp32 gap**, and comfortably within its own (much looser)
+   fp16 band.
+3. **The precision effect is real and quantified.** That fp16 gap is **~315× the
+   fp32 schedule-noise floor**: if you (wrongly) judged the fp16 engine by the
+   fp32 tolerance, you would flag it — correctly — as running reduced precision.
+   The token-id check alone would have called both engines identical. This is the
+   lab's recurring point at engine altitude: *the compute precision is invisible to
+   equality checks and only shows up when you measure against a trusted oracle
+   within a justified tolerance.*
+
+Token agreement being 100% here is prompt-dependent, not guaranteed: a prompt whose
+top-two logits fall within the fp16 noise floor would flip a token. The harness
+reports the first-divergence position per prompt so such a flip is localised rather
+than hidden in an aggregate.
+
+## What the engine tests assert
+
+- `test_vllm_matches_hf_reference_fp32` (gated) — vLLM fp32 tokens == HF fp32,
+  exactly;
+- `test_vllm_fp16_precision_axis` (gated) — fp16's logprob gap stays within the
+  fp16 band but exceeds the fp32 floor (`exceeds_oracle_band`);
+- `test_logprob_band_ordering_and_growth`, `test_precision_result_*` — the band is
+  larger for fp16 than fp32 and grows like √K; the verdict flags classify the two
+  regimes correctly;
+- plus the bench and KV-footprint pure tests above, and the always-on differential
+  logic tests.
