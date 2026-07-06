@@ -37,6 +37,7 @@ class PagedKVCache:
         num_blocks: int,
         scale: float | None = None,
         dtype: torch.dtype = torch.float32,
+        block_table_cls: type[BlockTable] = BlockTable,
     ) -> None:
         """Allocate empty K and V block pools for a single sequence.
 
@@ -56,12 +57,16 @@ class PagedKVCache:
             ``1 / sqrt(head_dim)``.
         dtype : torch.dtype, optional
             Storage dtype of the K and V pools (default ``torch.float32``).
+        block_table_cls : type[BlockTable], optional
+            Block-table implementation to back the cache. Defaults to the plain
+            :class:`BlockTable`; the fault-injection demo swaps in
+            :class:`vllab.paged.faults.FaultyBlockTable` to corrupt the mapping.
         """
         self.num_heads = num_heads
         self.head_dim = head_dim
         self.block_size = block_size
         self._scale = scale
-        self._table = BlockTable(num_blocks, block_size)
+        self._table = block_table_cls(num_blocks, block_size)
         self._length = 0
         self._k = torch.zeros((num_blocks, num_heads, block_size, head_dim), dtype=dtype)
         self._v = torch.zeros((num_blocks, num_heads, block_size, head_dim), dtype=dtype)

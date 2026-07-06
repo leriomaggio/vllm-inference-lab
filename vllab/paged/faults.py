@@ -11,10 +11,51 @@ same shape, same dtype, wrong numbers.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import cast
 
 import torch
 
+from .block_table import BlockTable
 from .paged_attention import PagedKVCache
+
+
+class FaultyBlockTable(BlockTable):
+    """A :class:`BlockTable` that can be told to mis-map a logical block.
+
+    This is the one extra lever the demo needs — pointing a logical block at the
+    wrong physical block. It lives here rather than on the production
+    :class:`BlockTable` so the real paging API stays free of test-only scaffolding.
+    """
+
+    def corrupt(self, logical_index: int, wrong_physical: int) -> int:
+        """Point a logical block at the wrong physical block (fault injection).
+
+        Models a page-table bug: the output stays a valid-looking tensor, but the
+        KV it reads comes from the wrong block.
+
+        Parameters
+        ----------
+        logical_index : int
+            Logical block whose mapping to overwrite. Must already be allocated.
+        wrong_physical : int
+            Physical block id to redirect it to. No bounds check is performed
+            here; callers pick an in-range-but-wrong id so the read stays valid.
+
+        Returns
+        -------
+        int
+            The previous physical id, so the fault can be reverted.
+
+        Raises
+        ------
+        IndexError
+            If ``logical_index`` has not been allocated.
+        """
+        if logical_index >= len(self._table):
+            raise IndexError("logical_index not allocated")
+        prev = self._table[logical_index]
+        self._table[logical_index] = wrong_physical
+        return prev
 
 
 @dataclass(frozen=True)
@@ -92,6 +133,7 @@ def block_table_fault_demo(
         block_size=block_size,
         num_blocks=num_blocks,
         scale=scale,
+        block_table_cls=FaultyBlockTable,
     )
     for t in range(seqlen):
         cache.append(k[:, t, :], v[:, t, :])
@@ -99,12 +141,14 @@ def block_table_fault_demo(
     q_last = q[:, -1:, :]
     clean = cache.attend(q_last)
 
-    mapping = cache.block_table.mapping
+    # The cache was built with a FaultyBlockTable, so the corrupt() lever is present.
+    table = cast(FaultyBlockTable, cache.block_table)
+    mapping = table.mapping
     if corrupt_logical >= len(mapping):
         raise IndexError("corrupt_logical is beyond the allocated blocks")
     # Point at some other in-range physical block (wrap to stay valid).
     wrong = (mapping[corrupt_logical] + 1) % num_blocks
-    prev = cache.block_table.corrupt(corrupt_logical, wrong)
+    prev = table.corrupt(corrupt_logical, wrong)
     faulty = cache.attend(q_last)
 
     diff = float((clean.to(torch.float64) - faulty.to(torch.float64)).abs().max())

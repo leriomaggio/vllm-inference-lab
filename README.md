@@ -70,9 +70,9 @@ vllab/
 │   ├── matmul_triton.py     tiled Triton tl.dot kernel; lazy-imported, interpreter mode, skips w/o Triton
 │   └── harness.py           validate PyTorch model + Triton kernel vs oracle; quantify schedule divergence
 ├── paged/       (L2)        PagedAttention from scratch
-│   ├── block_table.py       logical→physical page mapping over a free pool (+ fault injection)
+│   ├── block_table.py       logical→physical page mapping over a free pool
 │   ├── paged_attention.py   paged KV pool, gather/attend, paged_decode
-│   └── faults.py            block-table fault injection: the silent-corruption demo + FaultReport
+│   └── faults.py            FaultyBlockTable + silent-corruption demo (block_table_fault_demo, FaultReport)
 ├── engine/      (L3)        the real inference engine + its reference
 │   ├── types.py             GenResult: one prompt's generation (ids, text, per-step logprobs)
 │   ├── hf_reference.py      HuggingFace transformers oracle (greedy + next-token logprobs)

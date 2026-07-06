@@ -9,7 +9,8 @@ prefix by pointing two tables at the same physical block.
 
 This module models a **single sequence's** table over a pool of ``num_blocks``
 physical blocks. The pool bookkeeping is deliberately explicit so a mis-mapping
-(the classic paging bug) can be injected and observed.
+(the classic paging bug) can be injected and observed — see
+:class:`vllab.paged.faults.FaultyBlockTable` for that fault-injection subclass.
 """
 
 from __future__ import annotations
@@ -104,34 +105,3 @@ class BlockTable:
         if logical >= len(self._table):
             raise IndexError(f"token {token_index} is beyond allocated capacity")
         return self._table[logical], slot
-
-    def corrupt(self, logical_index: int, wrong_physical: int) -> int:
-        """Point a logical block at the wrong physical block (fault injection).
-
-        Models a page-table bug: the output stays a valid-looking tensor, but the
-        KV it reads comes from the wrong block. See :mod:`vllab.paged.faults` for
-        the end-to-end demonstration.
-
-        Parameters
-        ----------
-        logical_index : int
-            Logical block whose mapping to overwrite. Must already be allocated.
-        wrong_physical : int
-            Physical block id to redirect it to. No bounds check is performed
-            here; callers pick an in-range-but-wrong id so the read stays valid.
-
-        Returns
-        -------
-        int
-            The previous physical id, so the fault can be reverted.
-
-        Raises
-        ------
-        IndexError
-            If ``logical_index`` has not been allocated.
-        """
-        if logical_index >= len(self._table):
-            raise IndexError("logical_index not allocated")
-        prev = self._table[logical_index]
-        self._table[logical_index] = wrong_physical
-        return prev
